@@ -14,23 +14,25 @@ An app to help you with the memorization of new climbing routes and bouldering p
 
 Get an *Instant feedback* on your memorization
 
-![a glance at a route](./doc/img/glance_at_a_route.png)
-![results of practice](./doc/img/results_of_practise.png)
+<p>
+  <img src="./doc/img/glance_at_a_route.png" width="35%" alt="a glance at a route" />
+  <img src="./doc/img/results_of_practise.png" width="35%" alt="results of practice" />
+</p>
 
 ## Simpler problems
 
 Create *simpler* walls with *fewer* total marks
 
-![simpler routes](./doc/img/simpler_routes.png)
+<img src="./doc/img/simpler_routes.png" width="35%" alt="simpler routes" />
 
 ## Random or custom
 
 Let the program create *randomized problems* for you or *create your own*!
 
-![custom problem](./doc/img/custom_problem.png)
+<img src="./doc/img/custom_problem.png" width="35%" alt="custom problem" />
 
 ## Zoom in
 
 Zoom in to see tiny holds
 
-![zoom](./doc/img/zoom.png)
+<img src="./doc/img/zoom.png" width="35%" alt="zoom" />
