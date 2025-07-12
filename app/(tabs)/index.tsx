@@ -2,7 +2,6 @@ import Page from "@/components/ui/Page";
 import { darkColors, lightColors } from "@/constants/Colors";
 import { useTheme } from "@/context/ThemeContext";
 import { Feather } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
 import {
@@ -31,7 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const CustomModal = ({ visible, title, message, onClose, colors }) => {
-    const styles = getStyles(colors);
+    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 }); // Insets are not available here
     return (
         <Modal
             animationType="fade"
@@ -67,7 +66,7 @@ const SaveMarkSetModal = (
     { visible, defaultName, onSave, onCancel, colors },
 ) => {
     const [markSetName, setMarkSetName] = useState(defaultName);
-    const styles = getStyles(colors);
+    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 }); // Insets are not available here
 
     useEffect(() => {
         if (visible) {
@@ -163,8 +162,9 @@ const SaveMarkSetModal = (
 export default function HomeScreen() {
     const { theme } = useTheme();
     const colors = theme === "dark" ? darkColors : lightColors;
-    const styles = getStyles(colors);
     const router = useRouter();
+    const insets = useSafeAreaInsets();
+    const styles = getStyles(colors, insets);
 
     const { library, addImage, addCoordinates, addSavedMarkSet } = useLibrary();
     const params = useLocalSearchParams<{
@@ -239,7 +239,7 @@ export default function HomeScreen() {
             if (params.createSet === "true") {
                 loadForCreation(item, coordsSet);
             } else {
-                loadGameFromLibrary(item, coordsSet, params.setId);
+                loadWallFromLibrary(item, coordsSet, params.setId);
             }
 
             router.setParams({
@@ -251,7 +251,7 @@ export default function HomeScreen() {
         }
     }, [params, library]);
 
-    const loadGameFromLibrary = (
+    const loadWallFromLibrary = (
         item: LibraryItem,
         coordsSet: CoordinateSet,
         setId?: string,
@@ -324,17 +324,6 @@ export default function HomeScreen() {
 
             if (!result.canceled) {
                 const asset = result.assets[0];
-                const existingItem = library.find((item) =>
-                    item.originalUri === asset.uri
-                );
-                if (existingItem) {
-                    showAlert(
-                        "Duplicate",
-                        "This image is already in your library.",
-                    );
-                    return;
-                }
-
                 const libraryItem = await addImage(
                     asset.uri,
                     asset.width,
@@ -342,6 +331,14 @@ export default function HomeScreen() {
                 );
 
                 if (libraryItem) {
+                    // If image was already in library, show an alert but still load it
+                    if (libraryItem.coordinates.length > 0) {
+                        showAlert(
+                            "Image Exists",
+                            "This image is already in your library. Loading it for you.",
+                        );
+                        // Decide what to do - here we go to create_coords, user can go to library to play
+                    }
                     resetEverything();
                     setSelectedImage(libraryItem.imageUri);
                     setSelectedImageId(libraryItem.id);
@@ -361,56 +358,6 @@ export default function HomeScreen() {
                 "Error",
                 `Failed to pick image: ${error.message || "Unknown error"}`,
             );
-        }
-    };
-
-    const pickCoordinatesFile = async () => {
-        try {
-            if (!selectedImageId || imageDimensions.width === 0) {
-                showAlert(
-                    "Load Image First",
-                    "Please load an image before coordinates.",
-                );
-                return;
-            }
-            const result = await DocumentPicker.getDocumentAsync({
-                type: "text/plain",
-            });
-
-            if (!result.canceled) {
-                const content = await (await fetch(result.assets[0].uri))
-                    .text();
-                const coords = content.trim().split("\n").map((line) => {
-                    const [x, y] = line.split(",").map(parseFloat);
-                    if (
-                        isNaN(x) || isNaN(y) || x < 0 || y < 0 ||
-                        x >= imageDimensions.width ||
-                        y >= imageDimensions.height
-                    ) return null;
-                    return { x, y };
-                }).filter(Boolean) as { x: number; y: number }[];
-
-                if (coords.length < 2) {
-                    showAlert(
-                        "Invalid File",
-                        "File must contain at least 2 valid coordinates (x,y) within the image bounds.",
-                    );
-                    return;
-                }
-
-                const coordSet = await addCoordinates(selectedImageId, coords);
-                if (coordSet) {
-                    setImageCoordinates(coordSet.coords);
-                    setCurrentCoordsId(coordSet.id);
-                    resetGame();
-                    showAlert(
-                        "Success",
-                        `Loaded ${coordSet.coords.length} coordinates!`,
-                    );
-                }
-            }
-        } catch (error) {
-            showAlert("Error", `Failed to read file: ${error.message}`);
         }
     };
 
@@ -513,7 +460,7 @@ export default function HomeScreen() {
         ) {
             showAlert(
                 "Error",
-                "Cannot save set. No active game data or points found.",
+                "Cannot save set. No active wall data or points found.",
             );
             return;
         }
@@ -628,12 +575,12 @@ export default function HomeScreen() {
 
     const getMarkerColor = (index) => {
         if (gamePhase === "create_coords") {
-            return colors.primary + "80";
+            return colors.primary + "90";
         }
         if (gamePhase === "create") {
             const isSelected = userGuessedIndices.has(index);
             return isSelected
-                ? colors.primary + "80"
+                ? colors.primary + "90"
                 : "rgba(128, 128, 128, 0.2)";
         }
         const isTarget = targetPointsIndices.includes(index);
@@ -643,8 +590,8 @@ export default function HomeScreen() {
             if (!isTarget && isGuessed) return colors.error + "90";
             if (isTarget && !isGuessed) return colors.warning + "90";
         }
-        if (gamePhase === "memorize" && isTarget) return colors.primary + "70";
-        if (gamePhase === "guess" && isGuessed) return colors.primary + "70";
+        if (gamePhase === "memorize" && isTarget) return colors.primary + "90";
+        if (gamePhase === "guess" && isGuessed) return colors.primary + "90";
         return "rgba(128, 128, 128, 0.2)";
     };
 
@@ -655,7 +602,7 @@ export default function HomeScreen() {
             case "setup":
                 return selectedImage && imageCoordinates.length > 0
                     ? "Ready to play!"
-                    : "Load image & points";
+                    : "Load an image to start";
             case "memorize":
                 return `Memorize the ${targetPointsIndices.length} blue points!`;
             case "guess":
@@ -749,12 +696,13 @@ export default function HomeScreen() {
             if (!currentCoordSet) return null;
 
             if (targetPointsIndices.length > 0) {
+                // A more robust check for matching set
+                const targetIndicesSet = new Set(targetPointsIndices);
                 const matchingSet = currentCoordSet.savedMarkSets.find(
                     (savedSet) =>
-                        savedSet.indices.length ===
-                            targetPointsIndices.length &&
+                        savedSet.indices.length === targetIndicesSet.size &&
                         savedSet.indices.every((idx) =>
-                            targetPointsIndices.includes(idx)
+                            targetIndicesSet.has(idx)
                         ),
                 );
                 return matchingSet || null;
@@ -1049,19 +997,6 @@ export default function HomeScreen() {
                                     : colors.textSecondary}
                             />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.iconButton}
-                            onPress={pickCoordinatesFile}
-                            disabled={!selectedImageId}
-                        >
-                            <Feather
-                                name="map-pin"
-                                size={24}
-                                color={imageCoordinates.length > 0
-                                    ? colors.primary
-                                    : colors.textSecondary}
-                            />
-                        </TouchableOpacity>
                         <View style={styles.headerStatus}>
                             <Text style={styles.statusText}>
                                 {getGameStatusText()}
@@ -1142,15 +1077,14 @@ export default function HomeScreen() {
         </>
     );
 }
-const getStyles = (colors) => {
-  const insets = useSafeAreaInsets();
-  return StyleSheet.create({
+const getStyles = (colors, insets) => {
+    return StyleSheet.create({
         header: {
             flexDirection: "row",
             alignItems: "center",
             paddingHorizontal: 20,
-            marginTop: -insets.top,
             paddingBottom: 10,
+            marginTop: -insets.top,
             paddingTop: 10 + insets.top,
             gap: 15,
             borderBottomWidth: 1,
@@ -1166,7 +1100,7 @@ const getStyles = (colors) => {
             justifyContent: "center",
             alignItems: "center",
             backgroundColor: colors.accent,
-            marginLeft: 10,
+            marginLeft: "auto",
         },
         contentContainer: {
             flex: 1,
@@ -1177,7 +1111,7 @@ const getStyles = (colors) => {
         footer: {
             paddingHorizontal: 20,
             paddingTop: 15,
-            paddingBottom: 0,
+            paddingBottom: 12,
             borderTopWidth: 1,
             borderTopColor: colors.border,
             backgroundColor: colors.card,
@@ -1314,11 +1248,13 @@ const getStyles = (colors) => {
             color: colors.textSecondary,
         },
         modalButton: {
-            backgroundColor: colors.primary,
             borderRadius: 20,
             paddingVertical: 10,
-            paddingHorizontal: 40,
+            paddingHorizontal: 20,
             elevation: 2,
+            minWidth: 100,
+            alignItems: "center",
+            justifyContent: "center",
         },
         modalButtonText: {
             color: colors.primaryText,
@@ -1340,7 +1276,6 @@ const getStyles = (colors) => {
             width: "90%",
             maxWidth: 400,
         },
-
         saveModalHeader: {
             flexDirection: "row",
             alignItems: "center",
@@ -1348,13 +1283,11 @@ const getStyles = (colors) => {
             marginBottom: 15,
             gap: 10,
         },
-
         saveModalTitle: {
             fontSize: 20,
             fontWeight: "bold",
             color: colors.text,
         },
-
         saveModalMessage: {
             fontSize: 16,
             textAlign: "center",
@@ -1362,11 +1295,9 @@ const getStyles = (colors) => {
             color: colors.textSecondary,
             marginBottom: 25,
         },
-
         inputContainer: {
             marginBottom: 25,
         },
-
         saveTextInput: {
             borderWidth: 2,
             borderColor: colors.border,
@@ -1378,40 +1309,36 @@ const getStyles = (colors) => {
             backgroundColor: colors.background,
             marginBottom: 8,
         },
-
         characterCount: {
             fontSize: 12,
             color: colors.textSecondary,
             textAlign: "right",
             marginRight: 5,
         },
-
         modalButtonContainer: {
             flexDirection: "row",
             gap: 12,
         },
-
         modalButtonSecondary: {
             backgroundColor: "transparent",
             borderWidth: 2,
             borderColor: colors.border,
+            flex: 1,
         },
-
         modalButtonSecondaryText: {
             color: colors.text,
             fontWeight: "bold",
             textAlign: "center",
             fontSize: 16,
         },
-
         modalButtonPrimary: {
             backgroundColor: colors.primary,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
             gap: 8,
+            flex: 1,
         },
-
         modalButtonDisabled: {
             backgroundColor: colors.disabled,
             opacity: 0.6,
@@ -1420,7 +1347,6 @@ const getStyles = (colors) => {
             flexDirection: "row",
             alignItems: "center",
             gap: 15,
-            paddingBottom: 12,
         },
         mainActionsContainer: {
             flexDirection: "row",
@@ -1433,25 +1359,21 @@ const getStyles = (colors) => {
             justifyContent: "center",
             minHeight: 50,
         },
-
         markSetInfo: {
             alignItems: "flex-start",
             paddingLeft: 10,
         },
-
         markSetName: {
             fontSize: 16,
             fontWeight: "600",
             color: colors.text,
             marginBottom: 2,
         },
-
         markSetDetails: {
             fontSize: 12,
             color: colors.textSecondary,
             marginBottom: 4,
         },
-
         saveMarkSetButton: {
             flexDirection: "row",
             alignItems: "center",
@@ -1463,10 +1385,10 @@ const getStyles = (colors) => {
             borderColor: colors.primary,
             gap: 4,
         },
-
         saveMarkSetButtonText: {
             fontSize: 12,
             color: colors.primary,
             fontWeight: "600",
         },
-    })};
+    });
+};

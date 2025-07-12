@@ -9,9 +9,14 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as Crypto from "expo-crypto";
-import { CoordinateSet, LibraryItem, SavedMarkSet } from "@/types";
+import {
+    CoordinateSet,
+    ExportedLibraryItem,
+    LibraryItem,
+    SavedMarkSet,
+} from "@/types";
 
-const LIBRARY_STORAGE_KEY = "image_memory_game_library";
+const LIBRARY_STORAGE_KEY = "memorize_that_wall_library";
 
 interface LibraryContextType {
     library: LibraryItem[];
@@ -37,6 +42,7 @@ interface LibraryContextType {
         coordsId: string,
         setId: string,
     ) => Promise<void>;
+    importLibraryItem: (data: any) => Promise<LibraryItem | { error: string }>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -95,25 +101,38 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
                 fileBase64,
             );
 
-            let existingItem: LibraryItem | undefined;
-            setLibrary((currentLibrary) => {
-                existingItem = currentLibrary.find((item) =>
-                    item.contentHash === hash
-                );
-                if (existingItem) {
-                    console.log("Duplicate image detected, not adding.");
-                    return currentLibrary;
-                }
-
-                return currentLibrary;
-            });
-
+            const existingItem = library.find((item) =>
+                item.contentHash === hash
+            );
             if (existingItem) {
+                console.log(
+                    "Duplicate image detected, returning existing item.",
+                );
                 return existingItem;
             }
 
             const filename = uri.split("/").pop() || `img_${Date.now()}`;
             const newUri = `${FileSystem.documentDirectory}${filename}`;
+
+            const fileInfo = await FileSystem.getInfoAsync(newUri);
+            if (fileInfo.exists) {
+                const uniqueFilename = `${Date.now()}_${filename}`;
+                const uniqueUri =
+                    `${FileSystem.documentDirectory}${uniqueFilename}`;
+                await FileSystem.copyAsync({ from: uri, to: uniqueUri });
+                const newItem: LibraryItem = {
+                    id: uniqueUri,
+                    imageUri: uniqueUri,
+                    originalUri: uri,
+                    contentHash: hash,
+                    width,
+                    height,
+                    coordinates: [],
+                };
+                setLibrary((currentLibrary) => [...currentLibrary, newItem]);
+                return newItem;
+            }
+
             await FileSystem.copyAsync({ from: uri, to: newUri });
 
             const newItem: LibraryItem = {
@@ -198,7 +217,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         const newMarkSet: SavedMarkSet = {
             ...markSetData,
-            id: Date.now().toString(),
+            id: Date.now().toString() + Math.random().toString(),
         };
 
         setLibrary((currentLibrary) => {
@@ -208,6 +227,11 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
                         ...item,
                         coordinates: item.coordinates.map((coordSet) => {
                             if (coordSet.id === coordsId) {
+                                const existingSet = coordSet.savedMarkSets.find(
+                                    (s) => s.name === newMarkSet.name,
+                                );
+                                if (existingSet) return coordSet;
+
                                 return {
                                     ...coordSet,
                                     savedMarkSets: [
@@ -279,6 +303,148 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
         );
     };
 
+    const importLibraryItem = async (
+        data: any,
+    ): Promise<LibraryItem | { error: string }> => {
+        const expectedKeys: (keyof ExportedLibraryItem)[] = [
+            "version",
+            "imageData",
+            "imageFileName",
+            "width",
+            "height",
+            "coordinates",
+        ];
+        if (
+            !data || expectedKeys.some((key) => !(key in data)) ||
+            data.version !== 1
+        ) {
+            return { error: "Invalid or unsupported file format." };
+        }
+
+        try {
+            const tempImageUri = FileSystem.cacheDirectory +
+                `import_${Date.now()}_${data.imageFileName}`;
+            await FileSystem.writeAsStringAsync(tempImageUri, data.imageData, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+
+            const fileBase64 = await FileSystem.readAsStringAsync(
+                tempImageUri,
+                {
+                    encoding: FileSystem.EncodingType.Base64,
+                },
+            );
+            const imageHash = await Crypto.digestStringAsync(
+                Crypto.CryptoDigestAlgorithm.SHA256,
+                fileBase64,
+            );
+
+            let targetLibraryItem: LibraryItem | null = null;
+
+            const existingItem = library.find((item) =>
+                item.contentHash === imageHash
+            );
+            if (existingItem) {
+                targetLibraryItem = existingItem;
+                await FileSystem.deleteAsync(tempImageUri, {
+                    idempotent: true,
+                });
+            } else {
+                targetLibraryItem = await addImage(
+                    tempImageUri,
+                    data.width,
+                    data.height,
+                );
+                await FileSystem.deleteAsync(tempImageUri, {
+                    idempotent: true,
+                });
+            }
+
+            if (!targetLibraryItem) {
+                return { error: "Failed to process and save the image." };
+            }
+
+            for (const coordData of data.coordinates) {
+                const coordsString = JSON.stringify(coordData.coords);
+                const coordsHash = await Crypto.digestStringAsync(
+                    Crypto.CryptoDigestAlgorithm.SHA256,
+                    coordsString,
+                );
+
+                setLibrary((currentLibrary) => {
+                    return currentLibrary.map((item) => {
+                        if (item.id === targetLibraryItem!.id) {
+                            let existingCoordSet = item.coordinates.find(
+                                (c) => c.id === coordsHash,
+                            );
+
+                            if (!existingCoordSet) {
+                                existingCoordSet = {
+                                    id: coordsHash,
+                                    coords: coordData.coords,
+                                    savedMarkSets: [],
+                                };
+                                item = {
+                                    ...item,
+                                    coordinates: [
+                                        ...item.coordinates,
+                                        existingCoordSet,
+                                    ],
+                                };
+                            }
+
+                            if (coordData.savedMarkSets) {
+                                const newMarkSets = coordData.savedMarkSets
+                                    .filter(
+                                        (newMarkSet) =>
+                                            !existingCoordSet!.savedMarkSets
+                                                .some(
+                                                    (existing) =>
+                                                        existing.name ===
+                                                            newMarkSet.name,
+                                                ),
+                                    ).map((markSetData) => ({
+                                        ...markSetData,
+                                        id: Date.now().toString() +
+                                            Math.random().toString(),
+                                    }));
+
+                                if (newMarkSets.length > 0) {
+                                    item = {
+                                        ...item,
+                                        coordinates: item.coordinates.map(
+                                            (coordSet) => {
+                                                if (
+                                                    coordSet.id === coordsHash
+                                                ) {
+                                                    return {
+                                                        ...coordSet,
+                                                        savedMarkSets: [
+                                                            ...coordSet
+                                                                .savedMarkSets,
+                                                            ...newMarkSets,
+                                                        ],
+                                                    };
+                                                }
+                                                return coordSet;
+                                            },
+                                        ),
+                                    };
+                                }
+                            }
+                        }
+                        return item;
+                    });
+                });
+            }
+
+            return targetLibraryItem;
+        } catch (e) {
+            console.error("Error during import:", e);
+            return { error: "An unexpected error occurred during import." };
+        }
+    };
+
     return (
         <LibraryContext.Provider
             value={{
@@ -290,6 +456,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
                 deleteImage,
                 deleteCoordinates,
                 deleteSavedMarkSet,
+                importLibraryItem,
             }}
         >
             {children}

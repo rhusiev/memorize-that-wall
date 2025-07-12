@@ -10,12 +10,20 @@ import {
     View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system";
 import { Feather } from "@expo/vector-icons";
 import { useLibrary } from "@/context/LibraryContext";
 import { useTheme } from "@/context/ThemeContext";
 import { darkColors, lightColors } from "@/constants/Colors";
 import Page from "@/components/ui/Page";
-import { CoordinateSet, LibraryItem, SavedMarkSet } from "@/types";
+import {
+    CoordinateSet,
+    ExportedLibraryItem,
+    LibraryItem,
+    SavedMarkSet,
+} from "@/types";
 
 export default function LibraryScreen() {
     const { theme } = useTheme();
@@ -28,10 +36,12 @@ export default function LibraryScreen() {
         deleteImage,
         deleteCoordinates,
         deleteSavedMarkSet,
+        importLibraryItem,
     } = useLibrary();
     const [expandedImageId, setExpandedImageId] = useState<string | null>(null);
+    const [isImporting, setIsImporting] = useState(false);
 
-    const handleSelectGame = (
+    const handleSelectWall = (
         item: LibraryItem,
         coordSet: CoordinateSet,
         setId?: string,
@@ -52,7 +62,7 @@ export default function LibraryScreen() {
             Math.random() * coordSet.savedMarkSets.length,
         );
         const randomSet = coordSet.savedMarkSets[randomIndex];
-        handleSelectGame(item, coordSet, randomSet.id);
+        handleSelectWall(item, coordSet, randomSet.id);
     };
 
     const handleCreateNewSet = (item: LibraryItem, coordSet: CoordinateSet) => {
@@ -66,7 +76,6 @@ export default function LibraryScreen() {
         });
     };
 
-    // New: Navigate to the home screen to create a new set of coordinates
     const handleCreateNewCoordinates = (item: LibraryItem) => {
         router.push({
             pathname: "/",
@@ -75,6 +84,99 @@ export default function LibraryScreen() {
                 createCoords: "true",
             },
         });
+    };
+
+    const handleImport = async () => {
+        setIsImporting(true);
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ["application/json", "application/octet-stream"], // Broad types for compatibility
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled) return;
+
+            const fileUri = result.assets[0].uri;
+            const jsonString = await FileSystem.readAsStringAsync(fileUri);
+            const data = JSON.parse(jsonString);
+
+            const importResult = await importLibraryItem(data);
+
+            if ("error" in importResult) {
+                Alert.alert("Import Failed", importResult.error);
+            } else {
+                Alert.alert(
+                    "Import Successful",
+                    `"${
+                        importResult.imageUri.split("/").pop()
+                    }" has been added or updated in your library.`,
+                );
+                setExpandedImageId(importResult.id);
+            }
+        } catch (e) {
+            console.error(e);
+            Alert.alert(
+                "Import Error",
+                "The selected file could not be processed. Please ensure it's a valid mtWall export file.",
+            );
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const handleExport = async (item: LibraryItem) => {
+        try {
+            const imageData = await FileSystem.readAsStringAsync(
+                item.imageUri,
+                {
+                    encoding: FileSystem.EncodingType.Base64,
+                },
+            );
+
+            const exportData: ExportedLibraryItem = {
+                version: 1,
+                imageFileName: item.imageUri.split("/").pop() || "image.jpg",
+                imageData,
+                width: item.width,
+                height: item.height,
+                coordinates: item.coordinates.map((coordSet) => ({
+                    coords: coordSet.coords,
+                    savedMarkSets: coordSet.savedMarkSets.map((
+                        { name, indices },
+                    ) => ({ name, indices })),
+                })),
+            };
+
+            const jsonString = JSON.stringify(exportData);
+            const fileName =
+                (item.imageUri.split("/").pop()?.split(".")[0] || "export") +
+                ".mtwall";
+            const fileUri = FileSystem.cacheDirectory + fileName;
+
+            await FileSystem.writeAsStringAsync(fileUri, jsonString, {
+                encoding: FileSystem.EncodingType.UTF8,
+            });
+
+            if (!(await Sharing.isAvailableAsync())) {
+                Alert.alert(
+                    "Sharing Not Available",
+                    "Sharing is not available on your device.",
+                );
+                return;
+            }
+
+            await Sharing.shareAsync(fileUri, {
+                mimeType: "application/json",
+                dialogTitle: `Export ${exportData.imageFileName}`,
+                UTI: "public.json",
+            });
+        } catch (e) {
+            console.error("Export failed", e);
+            Alert.alert(
+                "Export Failed",
+                "An error occurred while preparing the export file.",
+            );
+        }
     };
 
     const confirmDelete = (
@@ -95,7 +197,7 @@ export default function LibraryScreen() {
                 <TouchableOpacity
                     style={styles.savedSetPlayButton}
                     onPress={() =>
-                        handleSelectGame(item, coordSet, savedSet.id)}
+                        handleSelectWall(item, coordSet, savedSet.id)}
                 >
                     <Feather name="target" size={16} color={colors.primary} />
                     <Text style={styles.playButtonTextSaved} numberOfLines={1}>
@@ -125,12 +227,13 @@ export default function LibraryScreen() {
             <View key={coordSet.id} style={styles.coordSetItem}>
                 <View style={styles.coordSetHeader}>
                     <Text style={styles.coordSetTitle}>
-                        Set {index + 1} ({coordSet.coords.length} points)
+                        Coordinates {index + 1} ({coordSet.coords.length}{" "}
+                        points)
                     </Text>
                     <TouchableOpacity
                         onPress={() =>
                             confirmDelete(
-                                "Delete Coordinate Set",
+                                "Delete Coordinates",
                                 "Are you sure you want to delete this coordinate set?",
                                 () =>
                                     deleteCoordinates(item.id, coordSet.id),
@@ -146,12 +249,11 @@ export default function LibraryScreen() {
 
                 <TouchableOpacity
                     style={styles.playButton}
-                    onPress={() =>
-                        handleSelectGame(item, coordSet)}
+                    onPress={() => handleSelectWall(item, coordSet)}
                 >
                     <Feather name="play" size={16} color={colors.primaryText} />
                     <Text style={styles.playButtonText}>
-                        Play New Random Marks
+                        Play Random New Set
                     </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -225,13 +327,22 @@ export default function LibraryScreen() {
                         {item.imageUri.split("/").pop()}
                     </Text>
                     <TouchableOpacity
-                        onPress={() =>
-                            confirmDelete(
-                                "Delete Image",
-                                "This will delete the image and ALL its associated data. Are you sure?",
-                                () => deleteImage(item.id),
-                            )}
-                        style={styles.deleteIcon}
+                        onPress={() => handleExport(item)}
+                        style={styles.actionIcon}
+                    >
+                        <Feather
+                            name="share-2"
+                            size={22}
+                            color={colors.primary}
+                        />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => confirmDelete(
+                            "Delete Image",
+                            "This will delete the image and ALL its associated data. Are you sure?",
+                            () => deleteImage(item.id),
+                        )}
+                        style={styles.actionIcon}
                     >
                         <Feather
                             name="trash-2"
@@ -269,7 +380,7 @@ export default function LibraryScreen() {
                                 color={colors.primary}
                             />
                             <Text style={styles.addNewCoordSetButtonText}>
-                                Create New Coordinate Set
+                                Create New Coordinates
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -278,18 +389,32 @@ export default function LibraryScreen() {
         );
     };
 
-    if (isLoading) {
+    if (isLoading || isImporting) {
         return (
-            <ActivityIndicator
-                style={{ flex: 1 }}
-                size="large"
-                color={colors.primary}
-            />
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator
+                    size="large"
+                    color={colors.primary}
+                />
+                <Text style={styles.loadingText}>
+                    {isImporting ? "Importing file..." : "Loading library..."}
+                </Text>
+            </View>
         );
     }
 
     return (
         <Page>
+            <View style={styles.pageHeader}>
+                <Text style={styles.pageTitle}>Library</Text>
+                <TouchableOpacity
+                    onPress={handleImport}
+                    style={styles.importButton}
+                >
+                    <Feather name="download" size={18} color={colors.primary} />
+                    <Text style={styles.importButtonText}>Import Wall</Text>
+                </TouchableOpacity>
+            </View>
             {library.length === 0
                 ? (
                     <View style={styles.emptyContainer}>
@@ -302,8 +427,8 @@ export default function LibraryScreen() {
                             Your library is empty.
                         </Text>
                         <Text style={styles.emptySubText}>
-                            Go to the Home tab to add an image and coordinates
-                            to get started.
+                            Import a mtWall file, or go to the Home tab to add
+                            an image to get started.
                         </Text>
                     </View>
                 )
@@ -322,14 +447,46 @@ export default function LibraryScreen() {
 
 const getStyles = (colors) =>
     StyleSheet.create({
-        header: {
-            padding: 20,
-            paddingTop: 50,
+        loadingContainer: {
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: colors.background,
+        },
+        loadingText: {
+            marginTop: 10,
+            fontSize: 16,
+            color: colors.textSecondary,
+        },
+        pageHeader: {
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            paddingHorizontal: 20,
+            paddingTop: 20,
+            paddingBottom: 10,
             borderBottomWidth: 1,
             borderBottomColor: colors.border,
-            backgroundColor: colors.card,
         },
-        headerTitle: { fontSize: 24, fontWeight: "bold", color: colors.text },
+        pageTitle: {
+            fontSize: 24,
+            fontWeight: "bold",
+            color: colors.text,
+        },
+        importButton: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            backgroundColor: colors.accent,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 20,
+        },
+        importButtonText: {
+            color: colors.primary,
+            fontWeight: "bold",
+            fontSize: 14,
+        },
         listContainer: { padding: 20, paddingBottom: 120 },
         libraryItem: {
             backgroundColor: colors.card,
@@ -340,8 +497,9 @@ const getStyles = (colors) =>
         itemHeader: {
             flexDirection: "row",
             alignItems: "center",
-            padding: 15,
-            gap: 15,
+            paddingHorizontal: 15,
+            paddingVertical: 10,
+            gap: 10,
         },
         thumbnail: {
             width: 50,
@@ -355,7 +513,7 @@ const getStyles = (colors) =>
             fontWeight: "600",
             color: colors.text,
         },
-        deleteIcon: { padding: 5 },
+        actionIcon: { padding: 5 },
         detailsContainer: {
             padding: 15,
             paddingTop: 0,
@@ -464,7 +622,6 @@ const getStyles = (colors) =>
             textAlign: "center",
             marginTop: 10,
         },
-        // New styles
         separator: {
             height: 1,
             backgroundColor: colors.border,
