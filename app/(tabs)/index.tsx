@@ -30,7 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const CustomModal = ({ visible, title, message, onClose, colors }) => {
-    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 }); // Insets are not available here
+    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 });
     return (
         <Modal
             animationType="fade"
@@ -66,7 +66,7 @@ const SaveMarkSetModal = (
     { visible, defaultName, onSave, onCancel, colors },
 ) => {
     const [markSetName, setMarkSetName] = useState(defaultName);
-    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 }); // Insets are not available here
+    const styles = getStyles(colors, { top: 0, bottom: 0, left: 0, right: 0 });
 
     useEffect(() => {
         if (visible) {
@@ -318,8 +318,8 @@ export default function HomeScreen() {
         try {
             await ImagePicker.requestMediaLibraryPermissionsAsync();
             const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 quality: 1,
+                legacy: true,
             });
 
             if (!result.canceled) {
@@ -331,13 +331,11 @@ export default function HomeScreen() {
                 );
 
                 if (libraryItem) {
-                    // If image was already in library, show an alert but still load it
                     if (libraryItem.coordinates.length > 0) {
                         showAlert(
                             "Image Exists",
                             "This image is already in your library. Loading it for you.",
                         );
-                        // Decide what to do - here we go to create_coords, user can go to library to play
                     }
                     resetEverything();
                     setSelectedImage(libraryItem.imageUri);
@@ -696,7 +694,6 @@ export default function HomeScreen() {
             if (!currentCoordSet) return null;
 
             if (targetPointsIndices.length > 0) {
-                // A more robust check for matching set
                 const targetIndicesSet = new Set(targetPointsIndices);
                 const matchingSet = currentCoordSet.savedMarkSets.find(
                     (savedSet) =>
