@@ -1,7 +1,7 @@
 import Page from "@/components/ui/Page";
 import { darkColors, lightColors } from "@/constants/Colors";
 import { useTheme } from "@/context/ThemeContext";
-import { Feather } from "@expo/vector-icons";
+import { Feather, FontAwesome5 } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import React, { useEffect, useState } from "react";
 import {
@@ -26,6 +26,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useLibrary } from "@/context/LibraryContext";
 import { CoordinateSet, LibraryItem } from "@/types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { handlePlayRandomSavedSet, handleSelectWall } from "@/utils/library.ts";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -727,19 +728,48 @@ export default function HomeScreen() {
                             size={20}
                             color={colors.primaryText}
                         />
-                        <Text style={styles.gameButtonText}>Same Set</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={[styles.gameButton, styles.resultButton]}
                         onPress={() => startMemorizePhase()}
                     >
+                        <FontAwesome5
+                            name="dice-three"
+                            size={20}
+                            color={colors.primaryText}
+                        />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[
+                            styles.gameButton,
+                            styles.resultButton,
+                        ]}
+                        onPress={() => {
+                            const currentItem = library.find(
+                                (item) => item.id === selectedImageId,
+                            );
+                            if (!currentItem) return;
+
+                            const currentCoordSet = currentItem.coordinates
+                                .find(
+                                    (coords) => coords.id === currentCoordsId,
+                                );
+                            if (!currentCoordSet) return;
+
+                            handlePlayRandomSavedSet(
+                                currentItem,
+                                currentCoordSet,
+                                router,
+                            );
+                        }}
+                    >
                         <Feather
                             name="shuffle"
                             size={20}
                             color={colors.primaryText}
                         />
-                        <Text style={styles.gameButtonText}>New Set</Text>
                     </TouchableOpacity>
 
                     <View style={styles.markSetInfoContainer}>
@@ -1133,7 +1163,7 @@ const getStyles = (colors, insets) => {
             justifyContent: "center",
             flexDirection: "row",
             gap: 10,
-            flexGrow: 2,
+            flexGrow: 1,
         },
         gameButtonDisabled: { backgroundColor: colors.disabled },
         gameButtonText: {
@@ -1343,7 +1373,7 @@ const getStyles = (colors, insets) => {
         gameControlsContainer: {
             flexDirection: "row",
             alignItems: "center",
-            gap: 15,
+            gap: 8,
         },
         mainActionsContainer: {
             flexDirection: "row",

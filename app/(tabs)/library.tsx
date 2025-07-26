@@ -13,7 +13,7 @@ import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system";
-import { Feather } from "@expo/vector-icons";
+import { Feather, FontAwesome5 } from "@expo/vector-icons";
 import { useLibrary } from "@/context/LibraryContext";
 import { useTheme } from "@/context/ThemeContext";
 import { darkColors, lightColors } from "@/constants/Colors";
@@ -24,6 +24,7 @@ import {
     LibraryItem,
     SavedMarkSet,
 } from "@/types";
+import { handlePlayRandomSavedSet, handleSelectWall } from "@/utils/library.ts";
 
 export default function LibraryScreen() {
     const { theme } = useTheme();
@@ -40,30 +41,6 @@ export default function LibraryScreen() {
     } = useLibrary();
     const [expandedImageId, setExpandedImageId] = useState<string | null>(null);
     const [isImporting, setIsImporting] = useState(false);
-
-    const handleSelectWall = (
-        item: LibraryItem,
-        coordSet: CoordinateSet,
-        setId?: string,
-    ) => {
-        const params: any = { imageId: item.id, coordsId: coordSet.id };
-        if (setId) {
-            params.setId = setId;
-        }
-        router.push({ pathname: "/", params });
-    };
-
-    const handlePlayRandomSavedSet = (
-        item: LibraryItem,
-        coordSet: CoordinateSet,
-    ) => {
-        if (coordSet.savedMarkSets.length === 0) return;
-        const randomIndex = Math.floor(
-            Math.random() * coordSet.savedMarkSets.length,
-        );
-        const randomSet = coordSet.savedMarkSets[randomIndex];
-        handleSelectWall(item, coordSet, randomSet.id);
-    };
 
     const handleCreateNewSet = (item: LibraryItem, coordSet: CoordinateSet) => {
         router.push({
@@ -197,7 +174,7 @@ export default function LibraryScreen() {
                 <TouchableOpacity
                     style={styles.savedSetPlayButton}
                     onPress={() =>
-                        handleSelectWall(item, coordSet, savedSet.id)}
+                        handleSelectWall(item, coordSet, router, savedSet.id)}
                 >
                     <Feather name="target" size={16} color={colors.primary} />
                     <Text style={styles.playButtonTextSaved} numberOfLines={1}>
@@ -249,9 +226,13 @@ export default function LibraryScreen() {
 
                 <TouchableOpacity
                     style={styles.playButton}
-                    onPress={() => handleSelectWall(item, coordSet)}
+                    onPress={() => handleSelectWall(item, coordSet, router)}
                 >
-                    <Feather name="play" size={16} color={colors.primaryText} />
+                    <FontAwesome5
+                        name="dice-three"
+                        size={16}
+                        color={colors.primaryText}
+                    />
                     <Text style={styles.playButtonText}>
                         Play Random New Set
                     </Text>
@@ -265,6 +246,7 @@ export default function LibraryScreen() {
                         handlePlayRandomSavedSet(
                             item,
                             coordSet,
+                            router,
                         )}
                 >
                     <Feather
@@ -337,11 +319,12 @@ export default function LibraryScreen() {
                         />
                     </TouchableOpacity>
                     <TouchableOpacity
-                        onPress={() => confirmDelete(
-                            "Delete Image",
-                            "This will delete the image and ALL its associated data. Are you sure?",
-                            () => deleteImage(item.id),
-                        )}
+                        onPress={() =>
+                            confirmDelete(
+                                "Delete Image",
+                                "This will delete the image and ALL its associated data. Are you sure?",
+                                () => deleteImage(item.id),
+                            )}
                         style={styles.actionIcon}
                     >
                         <Feather
