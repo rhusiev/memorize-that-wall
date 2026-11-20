@@ -1,0 +1,9 @@
+An app to help you with the memorization of new climbing routes and bouldering problems:
+- Spray walls sequences
+- Custom routes
+
+1. Import a **photo**
+2. Tap on holds
+3. Get a **randomized** set of **holds**
+4. **Memorize** and test your skills!
+5. *Share* your Walls with others!
